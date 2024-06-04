@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools>=46.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recon"
+version = "0.0.1"
+description = "A recon module to compare two databases in UC"
+authors = [{name = "rohan goel",email = "rohan.goel@databricks.com"}]
+dependencies = ["pyspark","pandas"]
+dynamic = ["readme"]  

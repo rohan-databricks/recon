@@ -1,0 +1,4 @@
+dist/
+src/.DS_Store
+src/recon/.DS_Store
+src/recon.egg-info/
