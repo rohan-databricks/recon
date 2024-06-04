@@ -2,3 +2,9 @@ dist/
 src/.DS_Store
 src/recon/.DS_Store
 src/recon.egg-info/
+src/recon_comp.egg-info/dependency_links.txt
+src/recon_comp/.DS_Store
+src/recon_comp.egg-info/PKG-INFO
+src/recon_comp.egg-info/requires.txt
+src/recon_comp.egg-info/SOURCES.txt
+src/recon_comp.egg-info/top_level.txt
