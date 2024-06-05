@@ -183,6 +183,7 @@ class Recon:
             """
 
             compare_sts = 'p'
+            check_type = 'compare'
             if not isinstance(primary_keys, list) or len(primary_keys) == 0:
                     raise ValueError("Invalid input: 'primary_keys' must be non-empty list.")
             if fields_to_compare:
@@ -215,18 +216,28 @@ class Recon:
                 # If there are mismatches, extract the primary key values
                 if mismatches_count > 0:
                     # Collect primary key values for records with mismatched fields
-
                     compare_sts = 'f'
-                mismatches_df = (mismatches_df.select(*primary_keys,col(f"df1.{field}").alias(F"tb1_{field}")
-                                ,col(f"df2.{field}").alias(F"tb2_{field}"))
-                                .withColumn("total_mismatches",lit(mismatches_count))
-                                )
-                mismatches_df = (mismatches_df.withColumn("Results", to_json(struct(*primary_keys,F"tb1_{field}",F"tb2_{field}","total_mismatches")))
+                    mismatches_df = (mismatches_df.select(*primary_keys,col(f"df1.{field}").alias(F"tb1_{field}")
+                                    ,col(f"df2.{field}").alias(F"tb2_{field}"))
+                                    .withColumn("total_mismatches",lit(mismatches_count))
+                                    )
+                    mismatches_df = (mismatches_df.withColumn("Results", to_json(struct(*primary_keys,F"tb1_{field}",F"tb2_{field}","total_mismatches")))
+                                                .withColumn("Table1", lit(table_name1))
+                                                .withColumn("Table2", lit(table_name2)).select("Table1","Table2","Results")
+                                                .withColumn("CheckType", lit(check_type))
+                                                .withColumn("CheckStatus", lit(compare_sts))
+                                    )
+
+                else:
+                    compare_sts = 'p'
+                    mismatches_df = spark.sql(F"select '{field}' as field, 0 as mismatches_count")
+                    mismatches_df = (mismatches_df.withColumn("Results", to_json(struct(col("field"),col("mismatches_count"))))
                                             .withColumn("Table1", lit(table_name1))
                                             .withColumn("Table2", lit(table_name2)).select("Table1","Table2","Results")
                                             .withColumn("CheckType", lit("compare"))
-                                            .withColumn("CheckStatus", lit(compare_sts))
-                                )
+                                            .withColumn("CheckStatus", lit(compare_sts)))
+
+
                 df_final = df_final.union(mismatches_df)
             
             return df_final
@@ -251,6 +262,7 @@ class Recon:
         """
         
         count_sts = 'p'
+        check_type = 'count'
         count1 = df1.count()
         count2 = df2.count()
 
@@ -268,7 +280,7 @@ class Recon:
                                                 .withColumn("Table2", lit(table_name2))
                                                 .withColumn("tb1_cnt",lit(count1))
                                                 .withColumn("tb2_cnt",lit(count2))
-                                                .withColumn("CheckType", lit("count"))
+                                                .withColumn("CheckType", lit(check_type))
                                                 .withColumn("CheckStatus", lit(count_sts))
                                                 .select("Table1","Table2",to_json(struct("Table",*primary_keys,"tb1_cnt","tb2_cnt")).alias("Results"),"CheckType","CheckStatus")
                         )
@@ -295,6 +307,7 @@ class Recon:
         """
 
         completeness_sts = 'p'
+        check_type = 'completeness'
 
         completeness1 = df1.dropna().count() 
         completeness2 = df2.dropna().count() 
@@ -303,7 +316,7 @@ class Recon:
             completeness_sts = 'f'
         else:
             print(F"Record count for non null matches between {table_name1} and {table_name2}.")
-        df_final_data = [(table_name1,table_name2,{"tb1":completeness1,"tb2":completeness2},"completeness",completeness_sts)]
+        df_final_data = [(table_name1,table_name2,{"tb1":completeness1,"tb2":completeness2},check_type,completeness_sts)]
         df_final = self.spark.createDataFrame(df_final_data, self.final_schema)
         return df_final
  
@@ -328,6 +341,7 @@ class Recon:
         """
 
         consistency_sts = 'p'
+        check_type = 'consistency'
         
         df_final = self.spark.createDataFrame([], self.final_schema)
 
@@ -342,17 +356,22 @@ class Recon:
         df2 = df2.select(primary_keys + fields_to_compare).limit(max_recs)
 
         for field in df1.columns:
+
             unique_values1 = df1.select(field).distinct().count()
             unique_values2 = df2.select(field).distinct().count()
+
             if unique_values1 != unique_values2:
                 #consistency_results.update({field:{table_name1:unique_values1,table_name2:unique_values2}})
                 print(f"Data consistency mismatch for field '{field}': {table_name1} has {unique_values1} unique values, while {table_name2} has {unique_values2} unique values.")
                 consistency_sts = 'f'
-                df_field_data = [(table_name1,table_name2,{F"tb1_{field}":unique_values1,F"tb2_{field}":unique_values2},"consistency",consistency_sts)]
-                df_field = self.spark.createDataFrame(df_field_data, self.final_schema)
-                df_final = df_final.union(df_field)
             else:
+                consistency_sts = 'p'
                 print(f"Data consistency for field '{field}' matches between {table_name1} and {table_name2}.")
+
+            df_field_data = [(table_name1,table_name2,{F"tb1_{field}":unique_values1,F"tb2_{field}":unique_values2},check_type,consistency_sts)]
+            df_field = self.spark.createDataFrame(df_field_data, self.final_schema)
+            df_final = df_final.union(df_field)
+
         return df_final
 
     def compare_data_distribution(self,df1: DataFrame, df2: DataFrame, primary_keys: list, fields_to_compare: list,table_name1,table_name2,max_recs:int=1000,max_fields:int=50):
@@ -375,6 +394,7 @@ class Recon:
         """
 
         dist_sts = 'p'
+        check_type = 'distribution'
         
         df_final = self.spark.createDataFrame([], self.final_schema)
         if not isinstance(primary_keys, list) or len(primary_keys) == 0:
@@ -387,7 +407,6 @@ class Recon:
         df1 = df1.select(primary_keys + fields_to_compare).limit(max_recs)
         df2 = df2.select(primary_keys + fields_to_compare).limit(max_recs)
 
-        distribution_results = []
 
         for field in df1.columns:
             distribution1 = df1.groupBy(field).count().withColumnRenamed("count","tb1_count")
@@ -397,15 +416,29 @@ class Recon:
           # Filter records where the field values are different
             mismatches_df = joined_df.filter("tb1_count != tb2_count")
             #distribution_results.append(mismatches_df.toPandas().to_dict(orient='records'))
-        if mismatches_df.count() > 0:
-          dist_sts = 'f'
-          mismatches_df = (mismatches_df.withColumn("Results", to_json(struct(field,"tb1_count","tb2_count")))
-                                            .withColumn("Table1", lit(table_name1))
-                                            .withColumn("Table2", lit(table_name2)).select("Table1","Table2","Results")
-                                            .withColumn("CheckType", lit("distribution"))
-                                            .withColumn("CheckStatus", lit(dist_sts))
-                                )
-          df_final = df_final.union(mismatches_df)
+            if mismatches_df.count() > 0:
+                dist_sts = 'f'
+                mismatches_df = (mismatches_df.withColumn("Results", to_json(struct(field,"tb1_count","tb2_count")))
+                                                .withColumn("Table1", lit(table_name1))
+                                                .withColumn("Table2", lit(table_name2)).select("Table1","Table2","Results")
+                                                .withColumn("CheckType", lit(check_type))
+                                                .withColumn("CheckStatus", lit(dist_sts)))
+            else:
+                dist_sts = 'p'
+                mismatches_df = self.spark.sql(f"SELECT '{field}' as field,0 as tb1_count,0 as tb2_count")
+                display(mismatches_df)
+                print("hi")
+                mismatches_df = (mismatches_df.withColumn("Results", to_json(struct(col("field"),col("tb1_count"),col("tb2_count"))))
+                                                .withColumn("Table1", lit(table_name1))
+                                                .withColumn("Table2", lit(table_name2)).select("Table1","Table2","Results")
+                                                .withColumn("CheckType", lit(check_type))
+                                                .withColumn("CheckStatus", lit(dist_sts)))
+                print("bye")
+
+
+                                    
+            df_final = df_final.union(mismatches_df)
+
         return df_final
 
     def compare_schemas_with_details(self,df1: DataFrame, df2: DataFrame,table_name1,table_name2):
