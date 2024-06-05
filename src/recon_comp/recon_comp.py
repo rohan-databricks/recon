@@ -201,7 +201,7 @@ class Recon:
 
 
             # Compare each field
-            for field in fields_to_compare:
+            for field in df1.columns:
                 df1_field = col(f"df1.{field}")
                 df2_field = col(f"df2.{field}")
                 
@@ -284,9 +284,9 @@ class Recon:
                                                 .withColumn("CheckStatus", lit(count_sts))
                                                 .select("Table1","Table2",to_json(struct("Table",*primary_keys,"tb1_cnt","tb2_cnt")).alias("Results"),"CheckType","CheckStatus")
                         )
-            print(F"Record count mismatch: {table_name1} has {count1} records, while {table_name2} has {count2} records.") 
+            # print(F"Record count mismatch: {table_name1} has {count1} records, while {table_name2} has {count2} records.") 
         else:
-            print(F"Record count matches between {table_name1} and {table_name2}.")
+            # print(F"Record count matches between {table_name1} and {table_name2}.")
             df_final_data = [(table_name1,table_name2,{"tb1_cnt":count1,"tb2_cnt":count2},"count",count_sts)]
             df_final = self.spark.createDataFrame(df_final_data, self.final_schema)
         return df_final
@@ -312,10 +312,10 @@ class Recon:
         completeness1 = df1.dropna().count() 
         completeness2 = df2.dropna().count() 
         if completeness1 != completeness2:
-            print(F"Record count for non null mismatch: {table_name1} has {completeness1} records, while {table_name2} has {completeness2} records.")
+            # print(F"Record count for non null mismatch: {table_name1} has {completeness1} records, while {table_name2} has {completeness2} records.")
             completeness_sts = 'f'
-        else:
-            print(F"Record count for non null matches between {table_name1} and {table_name2}.")
+        # else:
+        #     print(F"Record count for non null matches between {table_name1} and {table_name2}.")
         df_final_data = [(table_name1,table_name2,{"tb1":completeness1,"tb2":completeness2},check_type,completeness_sts)]
         df_final = self.spark.createDataFrame(df_final_data, self.final_schema)
         return df_final
@@ -362,11 +362,11 @@ class Recon:
 
             if unique_values1 != unique_values2:
                 #consistency_results.update({field:{table_name1:unique_values1,table_name2:unique_values2}})
-                print(f"Data consistency mismatch for field '{field}': {table_name1} has {unique_values1} unique values, while {table_name2} has {unique_values2} unique values.")
+                # print(f"Data consistency mismatch for field '{field}': {table_name1} has {unique_values1} unique values, while {table_name2} has {unique_values2} unique values.")
                 consistency_sts = 'f'
             else:
                 consistency_sts = 'p'
-                print(f"Data consistency for field '{field}' matches between {table_name1} and {table_name2}.")
+                # print(f"Data consistency for field '{field}' matches between {table_name1} and {table_name2}.")
 
             df_field_data = [(table_name1,table_name2,{F"tb1_{field}":unique_values1,F"tb2_{field}":unique_values2},check_type,consistency_sts)]
             df_field = self.spark.createDataFrame(df_field_data, self.final_schema)
@@ -431,9 +431,7 @@ class Recon:
                                                 .withColumn("Table2", lit(table_name2)).select("Table1","Table2","Results")
                                                 .withColumn("CheckType", lit(check_type))
                                                 .withColumn("CheckStatus", lit(dist_sts)))
-
-
-                                    
+                             
             df_final = df_final.union(mismatches_df)
 
         return df_final
@@ -477,7 +475,6 @@ class Recon:
                 F"missing_in_tb2": F"{list(missing_in_df2)}"
             }
             schema_sts = 'f'
-        print(F"schema comparison {schema_results}")
         df_final_data = [(table_name1,table_name2,schema_results,"schema",schema_sts)]
         df_final = self.spark.createDataFrame(df_final_data, self.final_schema)
         return df_final
@@ -518,12 +515,6 @@ class Recon:
       consistency_results = self.compare_data_consistency(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
       distribution_results = self.compare_data_distribution(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
       schema_results = self.compare_schemas_with_details(df1,df2,table_name1,table_name2)
-      print(F"comparison_results - {comparison_results}")
-      print(F"count_results - {count_results}")
-      print(F"completeness_results - {completeness_results}")
-      print(F"consistency_results - {consistency_results}")
-      print(F"distribution_results - {distribution_results}")
-      print(F"schema_results - {schema_results}")
       df_results = comparison_results.union(count_results).union(completeness_results).union(consistency_results).union(distribution_results).union(schema_results)
 
 
