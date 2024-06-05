@@ -52,7 +52,7 @@ class Recon:
                 ValueError: If 'sql' is an empty string.
                 AnalysisException: If an error occurs while executing the SQL query and it is not related to unresolved columns.
         """
-
+        print(F"Validation Sql")
         if not sql:
             raise ValueError("Invalid input: 'sql' must be a non-empty string.")
         try:
@@ -75,7 +75,7 @@ class Recon:
             Raises:
             ValueError: If 'table_name' is not a non-empty string with exactly two dots (catalog and database name).
        """
-
+        print(F"Validation table name")
         if table_name:
             table_name_dot_cnt = table_name.count(".")
             if not (table_name_dot_cnt == 2 ) or not isinstance(table_name, str):
@@ -100,7 +100,7 @@ class Recon:
             Raises:
                 ValueError: If the table names or SQL queries are invalid.
         """
-
+        print(F"Generating DFs for SQL Comps")
         self.__validate_table_name(table_name1)
         self.__validate_table_name(table_name2)
         df1 = self.__validate_sql(sql1)
@@ -128,7 +128,7 @@ class Recon:
                 ValueError: If the table names are invalid.
                 TypeError: If there is an error reading the tables with the specified where clause.
         """
-
+        print(F"Generating DF for tables")
         #validate input parameters
 
         self.__validate_table_name(table_name1)
@@ -147,12 +147,12 @@ class Recon:
                     raise F"Could not create df for {table_name2} with where clause {where_clause}. Below is error {e}"
         else:
             try:
-                print(F"spark.read.table({table_name1})")
+                #print(F"spark.read.table({table_name1})")
                 df1 = self.spark.read.table(table_name1)
             except TypeError as e:
                     raise F"Could not create df for {table_name1}. Below is error {e}"
             try:
-                print(F"spark.read.table({table_name2})")
+                #print(F"spark.read.table({table_name2})")
                 df2 = self.spark.read.table(table_name2)
             except TypeError as e:
                     raise F"Could not create df for {table_name2}. Below is error {e}"
@@ -181,7 +181,7 @@ class Recon:
                     ValueError: If 'primary_keys' is not a non-empty list.
                     ValueError: If 'fields_to_compare' is not a non-empty list or exceeds the maximum allowed fields.
             """
-
+            print(F"Comparing dataframes at field level")
             compare_sts = 'p'
             check_type = 'compare'
             if not isinstance(primary_keys, list) or len(primary_keys) == 0:
@@ -205,7 +205,7 @@ class Recon:
                 df1_field = col(f"df1.{field}")
                 df2_field = col(f"df2.{field}")
                 
-                print(F"{df1_field} and {df2_field}")
+                #print(F"{df1_field} and {df2_field}")
                 # Filter records where the field values are different
                 mismatches_df = joined_df.filter(df1_field != df2_field)
                 
@@ -230,7 +230,7 @@ class Recon:
 
                 else:
                     compare_sts = 'p'
-                    mismatches_df = spark.sql(F"select '{field}' as field, 0 as mismatches_count")
+                    mismatches_df = self.spark.sql(F"select '{field}' as field, 0 as mismatches_count")
                     mismatches_df = (mismatches_df.withColumn("Results", to_json(struct(col("field"),col("mismatches_count"))))
                                             .withColumn("Table1", lit(table_name1))
                                             .withColumn("Table2", lit(table_name2)).select("Table1","Table2","Results")
@@ -260,7 +260,7 @@ class Recon:
             Returns:
                 DataFrame: A DataFrame containing the results of the record count comparison.
         """
-        
+        print(F"Comparing record count")
         count_sts = 'p'
         check_type = 'count'
         count1 = df1.count()
@@ -291,7 +291,7 @@ class Recon:
             df_final = self.spark.createDataFrame(df_final_data, self.final_schema)
         return df_final
 
-    def compare_data_completeness(self,df1: DataFrame, df2: DataFrame,table_name1,table_name2):
+    def compare_data_completeness(self,df1: DataFrame, df2: DataFrame, primary_keys: list, fields_to_compare: list,table_name1,table_name2,max_recs:int=1000,max_fields:int=50):
 
         """
             Compare the data completeness (i.e., count of non-null records) of two DataFrames.
@@ -305,12 +305,17 @@ class Recon:
             Returns:
                 DataFrame: A DataFrame containing the results of the data completeness comparison.
         """
+        print(F"comparing for non null counts")
 
         completeness_sts = 'p'
         check_type = 'completeness'
 
+        df1 = df1.select(primary_keys + fields_to_compare)
+        df2 = df2.select(primary_keys + fields_to_compare)
+
         completeness1 = df1.dropna().count() 
         completeness2 = df2.dropna().count() 
+
         if completeness1 != completeness2:
             # print(F"Record count for non null mismatch: {table_name1} has {completeness1} records, while {table_name2} has {completeness2} records.")
             completeness_sts = 'f'
@@ -339,6 +344,7 @@ class Recon:
             Returns:
                 DataFrame: A DataFrame containing the results of the data consistency comparison.
         """
+        print(F"comparing field level for distinct counts")
 
         consistency_sts = 'p'
         check_type = 'consistency'
@@ -392,7 +398,7 @@ class Recon:
             Returns:
                 DataFrame: A DataFrame containing the results of the data distribution comparison.
         """
-
+        print(F"comparing field level for data distribution")
         dist_sts = 'p'
         check_type = 'distribution'
         
@@ -451,7 +457,7 @@ class Recon:
             Returns:
                 DataFrame: A DataFrame containing the results of the schema comparison with details.
         """
-
+        print(F"comparing schemas")
         schema_sts = 'p'
         
         df_final = self.spark.createDataFrame([], self.final_schema)
@@ -507,17 +513,22 @@ class Recon:
         df1,df2 = self.sql_comps(table_name1,table_name2,sql1,sql2)
       else:
         df1,df2 = self.table_comps(table_name1,table_name2,where_clause)
-      #perform comparison
+      #perform comparison at field level
       comparison_results = self.compare_dataframes(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)  
       #compare record count
       count_results = self.compare_record_count(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
-      completeness_results = self.compare_data_completeness(df1,df2,table_name1,table_name2)
+      #compare count for non null records
+      completeness_results = self.compare_data_completeness(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
+      #compare distinct counts at field level
       consistency_results = self.compare_data_consistency(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
+      #compare group by at field level
       distribution_results = self.compare_data_distribution(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
+      #compare schemas
       schema_results = self.compare_schemas_with_details(df1,df2,table_name1,table_name2)
+      #union all results
       df_results = comparison_results.union(count_results).union(completeness_results).union(consistency_results).union(distribution_results).union(schema_results)
 
-
+      #add audit fields
       df_results_all = (df_results.withColumn("UniqueCheckID",lit(str(uuid.uuid4())))
                          .withColumn("PrimaryKeys",lit(primary_keys))
                          .withColumn("FieldsToCompare",lit(fields_to_compare))
@@ -528,5 +539,6 @@ class Recon:
                          .withColumn("CurrentUser",current_user())
                          .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause","Sql1","Sql2","CheckTimeStamp","CurrentUser")
                     )
+      #append to audit table
       df_results_all.write.mode("append").saveAsTable(self.audit_table)
       #return df_results_all
