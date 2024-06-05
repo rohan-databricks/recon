@@ -431,7 +431,7 @@ class Recon:
                                                 .withColumn("CheckStatus", lit(dist_sts)))
             else:
                 dist_sts = 'p'
-                mismatches_df = self.spark.sql(f"SELECT '{field}' as field,0 as mismatchs_count")
+                mismatches_df = self.spark.sql(f"SELECT '{field}' as field,0 as mismatches_count")
                 mismatches_df = (mismatches_df.withColumn("Results", to_json(struct(col("field"),col("mismatches_count"))))
                                                 .withColumn("Table1", lit(table_name1))
                                                 .withColumn("Table2", lit(table_name2)).select("Table1","Table2","Results")
