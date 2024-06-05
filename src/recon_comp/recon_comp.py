@@ -417,9 +417,6 @@ class Recon:
         for field in df1.columns:
             distribution1 = df1.groupBy(field).count().withColumnRenamed("count","tb1_count")
             distribution2 = df2.groupBy(field).count().withColumnRenamed("count","tb2_count")
-
-            dist_cnt1 = distribution1.select("tb1_count").collect()
-            dist_cnt2 = distribution2.select("tb2_count").collect()
           # Perform an inner join on the primary keys
             joined_df = distribution1.join(distribution2,[field], "inner")
           # Filter records where the field values are different
@@ -434,8 +431,8 @@ class Recon:
                                                 .withColumn("CheckStatus", lit(dist_sts)))
             else:
                 dist_sts = 'p'
-                mismatches_df = self.spark.sql(f"SELECT '{field}' as field,{dist_cnt1} as tb1_count,{dist_cnt2} as tb2_count")
-                mismatches_df = (mismatches_df.withColumn("Results", to_json(struct(col("field"),col("tb1_count"),col("tb2_count"))))
+                mismatches_df = self.spark.sql(f"SELECT '{field}' as field,0 as mismatchs_count")
+                mismatches_df = (mismatches_df.withColumn("Results", to_json(struct(col("field"),col("mismatches_count"))))
                                                 .withColumn("Table1", lit(table_name1))
                                                 .withColumn("Table2", lit(table_name2)).select("Table1","Table2","Results")
                                                 .withColumn("CheckType", lit(check_type))
