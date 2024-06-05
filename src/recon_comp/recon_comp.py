@@ -426,14 +426,11 @@ class Recon:
             else:
                 dist_sts = 'p'
                 mismatches_df = self.spark.sql(f"SELECT '{field}' as field,0 as tb1_count,0 as tb2_count")
-                display(mismatches_df)
-                print("hi")
                 mismatches_df = (mismatches_df.withColumn("Results", to_json(struct(col("field"),col("tb1_count"),col("tb2_count"))))
                                                 .withColumn("Table1", lit(table_name1))
                                                 .withColumn("Table2", lit(table_name2)).select("Table1","Table2","Results")
                                                 .withColumn("CheckType", lit(check_type))
                                                 .withColumn("CheckStatus", lit(dist_sts)))
-                print("bye")
 
 
                                     
