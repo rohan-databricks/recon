@@ -84,7 +84,7 @@ class Recon:
                 raise ValueError(F"Invalid input: table name must be a non-empty string and with catalog and database name")
 
 # Function to identify column types
-    def identify_column_types(self,df:DataFrame) -> dict:
+    def __identify_column_types(self,df:DataFrame) -> dict:
 
         """
         Identify the types of columns in a DataFrame.
@@ -115,7 +115,7 @@ class Recon:
         return column_types
 
 
-    def expand_complex_fields(self,df:DataFrame,type:str,primary_keys:list,field:str) -> DataFrame:
+    def __expand_complex_fields(self,df:DataFrame,type:str,primary_keys:list,field:str) -> DataFrame:
 
         """
         expands dataframe for complex fields
@@ -161,7 +161,7 @@ class Recon:
         return df_exp,sub_fields
        
        
-    def sql_comps(self,table_name1:str,table_name2:str,sql1:str,sql2:str):
+    def __sql_comps(self,table_name1:str,table_name2:str,sql1:str,sql2:str):
         """
             Validate and execute SQL queries for two tables.
 
@@ -185,7 +185,7 @@ class Recon:
 
         return df1,df2
     
-    def table_comps(self,table_name1:str,
+    def __table_comps(self,table_name1:str,
                          table_name2:str,
                          where_clause:str=None
                          ):
@@ -562,19 +562,80 @@ class Recon:
         df_final = self.spark.createDataFrame(df_final_data, self.final_schema)
         return df_final
     
-    def identify_checks(self,df:DataFrame,fields_to_compare:list):
+    def __identify_comps(self,df:DataFrame,fields_to_compare:list):
       """
-        
+        identifies simple and complex fields
+
+        Parameters:
+            df (dataframe): dataframe for which simple and complex datatype needs to be identified
+            fields_to_compare (list): list of fields that should be compared
+        Returns:
+            Tuple: A tuple of dictionaries with fields with complex data types and fields tp compare dict for simple fields
         
       """
 
       #check for complex datatypes  
-      complex_column_types = self.identify_column_types(df.select(*fields_to_compare))
+      complex_column_types = self.__identify_column_types(df.select(*fields_to_compare))
       array_or_struct_cols = [item for sublist in complex_column_types.values() for item in sublist]
       #remove complex datatypes from fields to compare
       fields_to_compare_non_complex = list(set(fields_to_compare) - set(array_or_struct_cols))
-      fields_to_compare_dict = {"field_type":["non_complex"],"fields_to_compare":fields_to_compare_non_complex}
+      fields_to_compare_dict = {"field_type":["simple"],"fields_to_compare":fields_to_compare_non_complex}
       return(complex_column_types,fields_to_compare_dict)
+    
+    def __perform_comp(self,df1:DataFrame,df2:DataFrame,table_name1:str,
+                    table_name2:str,
+                    primary_keys:list,
+                    fields_to_compare:list,
+                    comp_type:str, 
+                    where_clause:str=None,
+                    sql1:str=None,
+                    sql2:str=None):
+            """
+            Perform all comparisons between two tables including schema, data, record count, completeness, consistency, and distribution.
+
+            Parameters:
+                table_name1 (str): The name of the first table.
+                table_name2 (str): The name of the second table.
+                primary_keys (list): List of primary keys for comparison.
+                fields_to_compare (list): List of fields to compare.
+                comp_type (str): type of fields its comparing. It would either be simple or complex.
+                where_clause (str, optional): SQL WHERE clause for filtering data. Default is None.
+                sql1 (str, optional): SQL query for the first table. Default is None.
+                sql2 (str, optional): SQL query for the second table. Default is None.
+
+            Returns:
+                DataFrame: A DataFrame containing the results of all comparisons.        
+            """
+
+            #perform comparison at field level
+            comparison_results = self.compare_dataframes(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)  
+            #compare record count
+            count_results = self.compare_record_count(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
+            #compare count for non null records
+            completeness_results = self.compare_data_completeness(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
+            #compare distinct counts at field level
+            consistency_results = self.compare_data_consistency(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
+            #compare group by at field level
+            distribution_results = self.compare_data_distribution(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
+            #compare schemas
+            schema_results = self.compare_schemas_with_details(df1,df2,table_name1,table_name2)
+            #union all results
+            df_results = comparison_results.union(count_results).union(completeness_results).union(consistency_results).union(distribution_results).union(schema_results)
+
+            #add audit fields
+            df_results_all = (df_results.withColumn("UniqueCheckID",lit(str(uuid.uuid4())))
+                                .withColumn("PrimaryKeys",lit(primary_keys))
+                                .withColumn("FieldsToCompare",lit(fields_to_compare))
+                                .withColumn("WhereClause",when(lit(where_clause) == None,lit("NULL")).otherwise(lit(where_clause)))
+                                .withColumn("Sql1",when(lit(sql1) == None,lit("NULL")).otherwise(lit(sql1)))
+                                .withColumn("Sql2",when(lit(sql2) == None,lit("NULL")).otherwise(lit(sql2)))
+                                .withCOlumn("FieldType",lit(comp_type))
+                                .withColumn("CheckTimeStamp",current_timestamp())
+                                .withColumn("CurrentUser",current_user())
+                                .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause","Sql1","Sql2","FieldType","CheckTimeStamp","CurrentUser")
+                            )
+            #append to audit table
+            df_results_all.write.mode("append").saveAsTable(self.audit_table)
 
     def compare_all(self,table_name1:str,
                     table_name2:str,
@@ -601,77 +662,20 @@ class Recon:
       """
       
       if self.sql_comp.lower() == 'y':
-        df1,df2 = self.sql_comps(table_name1,table_name2,sql1,sql2)
+        df1,df2 = self.__sql_comps(table_name1,table_name2,sql1,sql2)
       else:
-        df1,df2 = self.table_comps(table_name1,table_name2,where_clause)
+        df1,df2 = self.__table_comps(table_name1,table_name2,where_clause)
 
-      complex_comps,non_complex_comps =  self.identify_checks(df1,fields_to_compare)
+      complex_comps,non_complex_comps =  self.__identify_comps(df1,fields_to_compare)
 
 
       for i in non_complex_comps["field_type"]:
             fields_to_compare = non_complex_comps["fields_to_compare"]
+            self.__perform_comp(df1,df2,primary_keys,fields_to_compare,"simple",table_name1,table_name2)
 
-            #perform comparison at field level
-            comparison_results = self.compare_dataframes(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)  
-            #compare record count
-            count_results = self.compare_record_count(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
-            #compare count for non null records
-            completeness_results = self.compare_data_completeness(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
-            #compare distinct counts at field level
-            consistency_results = self.compare_data_consistency(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
-            #compare group by at field level
-            distribution_results = self.compare_data_distribution(df1,df2,primary_keys,fields_to_compare,table_name1,table_name2)
-            #compare schemas
-            schema_results = self.compare_schemas_with_details(df1,df2,table_name1,table_name2)
-            #union all results
-            df_results = comparison_results.union(count_results).union(completeness_results).union(consistency_results).union(distribution_results).union(schema_results)
-
-            #add audit fields
-            df_results_all = (df_results.withColumn("UniqueCheckID",lit(str(uuid.uuid4())))
-                                .withColumn("PrimaryKeys",lit(primary_keys))
-                                .withColumn("FieldsToCompare",lit(fields_to_compare))
-                                .withColumn("WhereClause",when(lit(where_clause) == None,lit("NULL")).otherwise(lit(where_clause)))
-                                .withColumn("Sql1",when(lit(sql1) == None,lit("NULL")).otherwise(lit(sql1)))
-                                .withColumn("Sql2",when(lit(sql2) == None,lit("NULL")).otherwise(lit(sql2)))
-                                .withCOlumn("FieldType",lit("Simple"))
-                                .withColumn("CheckTimeStamp",current_timestamp())
-                                .withColumn("CurrentUser",current_user())
-                                .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause","Sql1","Sql2","FieldType","CheckTimeStamp","CurrentUser")
-                            )
-            #append to audit table
-            df_results_all.write.mode("append").saveAsTable(self.audit_table)
-            #return df_results_all
       for dtype in complex_comps:
           for field in complex_comps[dtype]:
-                df1_expand,fields_to_compare_comp = self.expand_complex_fields(df1,dtype,primary_keys,field)
-                df2_expand,fields_to_compare_comp = self.expand_complex_fields(df2,dtype,primary_keys,field)
-                #perform comparison at field level
-                comparison_results_exp = self.compare_dataframes(df1_expand,df2_expand,primary_keys,fields_to_compare_comp,table_name1,table_name2)  
-                #compare record count
-                count_results_exp = self.compare_record_count(df1_expand,df2_expand,primary_keys,fields_to_compare_comp,table_name1,table_name2)
-                #compare count for non null records
-                completeness_results_exp = self.compare_data_completeness(df1_expand,df2_expand,primary_keys,fields_to_compare_comp,table_name1,table_name2)
-                #compare distinct counts at field level
-                consistency_results_exp = self.compare_data_consistency(df1_expand,df2_expand,primary_keys,fields_to_compare_comp,table_name1,table_name2)
-                #compare group by at field level
-                distribution_results_exp = self.compare_data_distribution(df1_expand,df2_expand,primary_keys,fields_to_compare_comp,table_name1,table_name2)
-                #compare schemas
-                schema_results_exp = self.compare_schemas_with_details(df1_expand,df2_expand,table_name1,table_name2)
-                #union all results
-                df_results_exp = comparison_results_exp.union(count_results_exp).union(completeness_results_exp).union(consistency_results_exp).union(distribution_results_exp).union(schema_results_exp)
-
-                #add audit fields
-                df_results_all_exp = (df_results_exp.withColumn("UniqueCheckID",lit(str(uuid.uuid4())))
-                                    .withColumn("PrimaryKeys",lit(primary_keys))
-                                    .withColumn("FieldsToCompare",lit(fields_to_compare_comp))
-                                    .withColumn("WhereClause",when(lit(where_clause) == None,lit("NULL")).otherwise(lit(where_clause)))
-                                    .withColumn("Sql1",when(lit(sql1) == None,lit("NULL")).otherwise(lit(sql1)))
-                                    .withColumn("Sql2",when(lit(sql2) == None,lit("NULL")).otherwise(lit(sql2)))
-                                    .withCOlumn("FieldType",lit("Complex"))
-                                    .withColumn("CheckTimeStamp",current_timestamp())
-                                    .withColumn("CurrentUser",current_user())
-                                    .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause","Sql1","Sql2","FieldType","CheckTimeStamp","CurrentUser")
-                                )
-                #append to audit table
-                df_results_all_exp.write.mode("append").saveAsTable(self.audit_table)
-                #return df_results_all
+                df1_expand,fields_to_compare_comp = self.__expand_complex_fields(df1,dtype,primary_keys,field)
+                df2_expand,fields_to_compare_comp = self.__expand_complex_fields(df2,dtype,primary_keys,field)
+                self.__perform_comp(df1_expand,df2_expand,primary_keys,fields_to_compare_comp,"complex",table_name1,table_name2)
+              
