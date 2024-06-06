@@ -569,7 +569,7 @@ class Recon:
       """
 
       #check for complex datatypes  
-      complex_column_types = self.identify_column_types(df)
+      complex_column_types = self.identify_column_types(df.select(*fields_to_compare))
       array_or_struct_cols = [item for sublist in complex_column_types.values() for item in sublist]
       #remove complex datatypes from fields to compare
       fields_to_compare_non_complex = list(set(fields_to_compare) - set(array_or_struct_cols))
@@ -633,9 +633,10 @@ class Recon:
                                 .withColumn("WhereClause",when(lit(where_clause) == None,lit("NULL")).otherwise(lit(where_clause)))
                                 .withColumn("Sql1",when(lit(sql1) == None,lit("NULL")).otherwise(lit(sql1)))
                                 .withColumn("Sql2",when(lit(sql2) == None,lit("NULL")).otherwise(lit(sql2)))
+                                .withCOlumn("FieldType",lit("Simple"))
                                 .withColumn("CheckTimeStamp",current_timestamp())
                                 .withColumn("CurrentUser",current_user())
-                                .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause","Sql1","Sql2","CheckTimeStamp","CurrentUser")
+                                .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause","Sql1","Sql2","FieldType","CheckTimeStamp","CurrentUser")
                             )
             #append to audit table
             df_results_all.write.mode("append").saveAsTable(self.audit_table)
@@ -662,13 +663,14 @@ class Recon:
                 #add audit fields
                 df_results_all_exp = (df_results_exp.withColumn("UniqueCheckID",lit(str(uuid.uuid4())))
                                     .withColumn("PrimaryKeys",lit(primary_keys))
-                                    .withColumn("FieldsToCompare",lit(fields_to_compare))
+                                    .withColumn("FieldsToCompare",lit(fields_to_compare_comp))
                                     .withColumn("WhereClause",when(lit(where_clause) == None,lit("NULL")).otherwise(lit(where_clause)))
                                     .withColumn("Sql1",when(lit(sql1) == None,lit("NULL")).otherwise(lit(sql1)))
                                     .withColumn("Sql2",when(lit(sql2) == None,lit("NULL")).otherwise(lit(sql2)))
+                                    .withCOlumn("FieldType",lit("Complex"))
                                     .withColumn("CheckTimeStamp",current_timestamp())
                                     .withColumn("CurrentUser",current_user())
-                                    .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause","Sql1","Sql2","CheckTimeStamp","CurrentUser")
+                                    .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause","Sql1","Sql2","FieldType","CheckTimeStamp","CurrentUser")
                                 )
                 #append to audit table
                 df_results_all_exp.write.mode("append").saveAsTable(self.audit_table)
