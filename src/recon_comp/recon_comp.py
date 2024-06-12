@@ -629,7 +629,7 @@ class Recon:
                                 .withColumn("WhereClause",when(lit(where_clause) == None,lit("NULL")).otherwise(lit(where_clause)))
                                 .withColumn("Sql1",when(lit(sql1) == None,lit("NULL")).otherwise(lit(sql1)))
                                 .withColumn("Sql2",when(lit(sql2) == None,lit("NULL")).otherwise(lit(sql2)))
-                                .withCOlumn("FieldType",lit(comp_type))
+                                .withColumn("FieldType",lit(comp_type))
                                 .withColumn("CheckTimeStamp",current_timestamp())
                                 .withColumn("CurrentUser",current_user())
                                 .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause","Sql1","Sql2","FieldType","CheckTimeStamp","CurrentUser")
@@ -671,11 +671,10 @@ class Recon:
 
       for i in non_complex_comps["field_type"]:
             fields_to_compare = non_complex_comps["fields_to_compare"]
-            self.__perform_comp(df1,df2,primary_keys,fields_to_compare,"simple",table_name1,table_name2)
+            self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys,fields_to_compare,"simple")
 
       for dtype in complex_comps:
           for field in complex_comps[dtype]:
                 df1_expand,fields_to_compare_comp = self.__expand_complex_fields(df1,dtype,primary_keys,field)
                 df2_expand,fields_to_compare_comp = self.__expand_complex_fields(df2,dtype,primary_keys,field)
-                self.__perform_comp(df1_expand,df2_expand,primary_keys,fields_to_compare_comp,"complex",table_name1,table_name2)
-              
+                self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys,fields_to_compare_comp,"complex")
