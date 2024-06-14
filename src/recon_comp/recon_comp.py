@@ -289,8 +289,9 @@ class Recon:
             
             df_final = self.spark.createDataFrame([], self.final_schema)
             # Ensure primary_keys and fields_to_compare are in both DataFrames
-            df1 = df1.select(primary_keys + fields_to_compare).limit(max_recs)
-            df2 = df2.select(primary_keys + fields_to_compare).limit(max_recs)
+            fields_to_select = list(set(primary_keys + fields_to_compare))
+            df1 = df1.select(fields_to_select).limit(max_recs)
+            df2 = df2.select(fields_to_select).limit(max_recs)
             
             # Perform an inner join on the primary keys
             joined_df = df1.alias("df1").join(df2.alias("df2"), primary_keys, "inner")
@@ -406,8 +407,9 @@ class Recon:
         completeness_sts = 'p'
         check_type = 'completeness'
 
-        df1 = df1.select(primary_keys + fields_to_compare)
-        df2 = df2.select(primary_keys + fields_to_compare)
+        fields_to_select = list(set(primary_keys + fields_to_compare))
+        df1 = df1.select(fields_to_select)
+        df2 = df2.select(fields_to_select)
 
         completeness1 = df1.dropna().count() 
         completeness2 = df2.dropna().count() 
@@ -454,8 +456,9 @@ class Recon:
                 raise ValueError("Invalid input: 'fields_to_compare' must be non-empty [] and less than 50 fields.")
             
         # Ensure primary_keys and fields_to_compare are in both DataFrames
-        df1 = df1.select(primary_keys + fields_to_compare).limit(max_recs)
-        df2 = df2.select(primary_keys + fields_to_compare).limit(max_recs)
+        fields_to_select = list(set(primary_keys + fields_to_compare))
+        df1 = df1.select(fields_to_select).limit(max_recs)
+        df2 = df2.select(fields_to_select).limit(max_recs)
 
         for field in df1.columns:
 
@@ -506,8 +509,9 @@ class Recon:
                 raise ValueError("Invalid input: 'fields_to_compare' must be non-empty [] and less than 50 fields.")
             
         # Ensure primary_keys and fields_to_compare are in both DataFrames
-        df1 = df1.select(primary_keys + fields_to_compare).limit(max_recs)
-        df2 = df2.select(primary_keys + fields_to_compare).limit(max_recs)
+        fields_to_select = list(set(primary_keys + fields_to_compare))
+        df1 = df1.select(fields_to_select).limit(max_recs)
+        df2 = df2.select(fields_to_select).limit(max_recs)
 
 
         for field in df1.columns:
@@ -606,7 +610,8 @@ class Recon:
                     primary_keys:list,
                     fields_to_compare:list,
                     comp_type:str, 
-                    where_clause:str=None,
+                    where_clause1:str=None,
+                    where_clause2:str=None,
                     sql1:str=None,
                     sql2:str=None):
             """
@@ -645,7 +650,8 @@ class Recon:
             df_results_all = (df_results.withColumn("UniqueCheckID",lit(str(uuid.uuid4())))
                                 .withColumn("PrimaryKeys",lit(primary_keys))
                                 .withColumn("FieldsToCompare",lit(fields_to_compare))
-                                .withColumn("WhereClause",when(lit(where_clause) == None,lit("NULL")).otherwise(lit(where_clause)))
+                                .withColumn("WhereClause1",when(lit(where_clause1) == None,lit("NULL")).otherwise(lit(where_clause1)))
+                                .withColumn("WhereClause2",when(lit(where_clause2) == None,lit("NULL")).otherwise(lit(where_clause2)))
                                 .withColumn("Sql1",when(lit(sql1) == None,lit("NULL")).otherwise(lit(sql1)))
                                 .withColumn("Sql2",when(lit(sql2) == None,lit("NULL")).otherwise(lit(sql2)))
                                 .withColumn("FieldType",lit(comp_type))
@@ -689,13 +695,13 @@ class Recon:
 
         for i in non_complex_comps["field_type"]:
                 fields_to_compare = non_complex_comps["fields_to_compare"]
-                self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys,fields_to_compare,"simple")
+                self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys,fields_to_compare,"simple",None,None,sql1,sql2)
 
         for dtype in complex_comps:
             for field in complex_comps[dtype]:
                     df1_expand,fields_to_compare_comp = self.__expand_complex_fields(df1,dtype,primary_keys,field)
                     df2_expand,fields_to_compare_comp = self.__expand_complex_fields(df2,dtype,primary_keys,field)
-                    self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys,fields_to_compare_comp,"complex")
+                    self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys,fields_to_compare_comp,"complex",None,None,sql1,sql2)
 
       else:
         df1,df2 = self.__table_comps(table_name1,table_name2,where_clause1,where_clause2)
@@ -709,7 +715,7 @@ class Recon:
         for i in non_complex_comps["field_type"]:
                 fields_to_compare = non_complex_comps["fields_to_compare"]
                 #fields_to_compare_new = [self.__normalize_column_name(col) for col in fields_to_compare]
-                self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys_new,fields_to_compare,"simple")
+                self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys_new,fields_to_compare,"simple",where_clause1,where_clause2)
 
         for dtype in complex_comps:
             for field in complex_comps[dtype]:
@@ -718,6 +724,6 @@ class Recon:
                     df1_expand = self.__normalize_dataframe_columns(df1_expand)
                     df2_expand = self.__normalize_dataframe_columns(df2_expand)
                     fields_to_compare_comp_norm = [self.__normalize_column_name(col) for col in fields_to_compare_comp]
-                    self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys_new,fields_to_compare_comp_norm,"complex")
+                    self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys_new,fields_to_compare_comp_norm,"complex",where_clause1,where_clause2)
 
 ## to do - correction for sqls
