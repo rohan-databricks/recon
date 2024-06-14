@@ -680,25 +680,40 @@ class Recon:
       
       if self.sql_comp.lower() == 'y':
         df1,df2 = self.__sql_comps(table_name1,table_name2,sql1,sql2)
-      else:
-        df1,df2 = self.__table_comps(table_name1,table_name2,where_clause)
-    
-      fields_to_compare_norm = [self.__normalize_column_name(col) for col in fields_to_compare]
-      complex_comps,non_complex_comps =  self.__identify_comps(df1,fields_to_compare_norm)
 
-      primary_keys_new = [self.__normalize_column_name(col) for col in primary_keys]
-      
+      complex_comps,non_complex_comps =  self.__identify_comps(df1,fields_to_compare)
 
       for i in non_complex_comps["field_type"]:
             fields_to_compare = non_complex_comps["fields_to_compare"]
-            #fields_to_compare_new = [self.__normalize_column_name(col) for col in fields_to_compare]
-            self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys_new,fields_to_compare,"simple")
+            self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys,fields_to_compare,"simple")
 
       for dtype in complex_comps:
           for field in complex_comps[dtype]:
-                df1_expand,fields_to_compare_comp = self.__expand_complex_fields(df1,dtype,primary_keys_new,field)
-                df2_expand,fields_to_compare_comp = self.__expand_complex_fields(df2,dtype,primary_keys_new,field)
-                df1_expand = self.__normalize_dataframe_columns(df1_expand)
-                df2_expand = self.__normalize_dataframe_columns(df2_expand)
-                fields_to_compare_comp_norm = [self.__normalize_column_name(col) for col in fields_to_compare_norm]
-                self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys_new,fields_to_compare_comp_norm,"complex")
+                df1_expand,fields_to_compare_comp = self.__expand_complex_fields(df1,dtype,primary_keys,field)
+                df2_expand,fields_to_compare_comp = self.__expand_complex_fields(df2,dtype,primary_keys,field)
+                self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys,fields_to_compare_comp,"complex")
+
+      else:
+        df1,df2 = self.__table_comps(table_name1,table_name2,where_clause)
+    
+        fields_to_compare_norm = [self.__normalize_column_name(col) for col in fields_to_compare]
+        complex_comps,non_complex_comps =  self.__identify_comps(df1,fields_to_compare_norm)
+
+        primary_keys_new = [self.__normalize_column_name(col) for col in primary_keys]
+        
+
+        for i in non_complex_comps["field_type"]:
+                fields_to_compare = non_complex_comps["fields_to_compare"]
+                #fields_to_compare_new = [self.__normalize_column_name(col) for col in fields_to_compare]
+                self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys_new,fields_to_compare,"simple")
+
+        for dtype in complex_comps:
+            for field in complex_comps[dtype]:
+                    df1_expand,fields_to_compare_comp = self.__expand_complex_fields(df1,dtype,primary_keys_new,field)
+                    df2_expand,fields_to_compare_comp = self.__expand_complex_fields(df2,dtype,primary_keys_new,field)
+                    df1_expand = self.__normalize_dataframe_columns(df1_expand)
+                    df2_expand = self.__normalize_dataframe_columns(df2_expand)
+                    fields_to_compare_comp_norm = [self.__normalize_column_name(col) for col in fields_to_compare_comp]
+                    self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys_new,fields_to_compare_comp_norm,"complex")
+
+## to do - correction for sqls
