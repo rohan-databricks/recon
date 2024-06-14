@@ -229,7 +229,7 @@ class Recon:
             
         # read old and new table
 
-        if where_clause:
+        if where_clause1:
             try:
                 df1 = self.spark.read.table(table_name1).filter(where_clause1)
             except TypeError as e:
@@ -660,7 +660,8 @@ class Recon:
                     table_name2:str,
                     primary_keys:list,
                     fields_to_compare:list, 
-                    where_clause:str=None,
+                    where_clause1:str=None,
+                    where_clause2:str=None,
                     sql1:str=None,
                     sql2:str=None):
       
@@ -672,7 +673,8 @@ class Recon:
                 table_name2 (str): The name of the second table.
                 primary_keys (list): List of primary keys for comparison.
                 fields_to_compare (list): List of fields to compare.
-                where_clause (str, optional): SQL WHERE clause for filtering data. Default is None.
+                where_clause1 (str, optional): SQL WHERE clause for filtering tabl1. Default is None.
+                where_clause2 (str, optional): SQL WHERE clause for filtering tabl2. Default is None.
                 sql1 (str, optional): SQL query for the first table. Default is None.
                 sql2 (str, optional): SQL query for the second table. Default is None.
 
@@ -696,7 +698,7 @@ class Recon:
                     self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys,fields_to_compare_comp,"complex")
 
       else:
-        df1,df2 = self.__table_comps(table_name1,table_name2,where_clause)
+        df1,df2 = self.__table_comps(table_name1,table_name2,where_clause1,where_clause2)
     
         fields_to_compare_norm = [self.__normalize_column_name(col) for col in fields_to_compare]
         complex_comps,non_complex_comps =  self.__identify_comps(df1,fields_to_compare_norm)
