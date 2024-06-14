@@ -201,7 +201,8 @@ class Recon:
     
     def __table_comps(self,table_name1:str,
                          table_name2:str,
-                         where_clause:str=None
+                         where_clause1:str=None,
+                         where_clause2:str=None
                          ):
         
         """
@@ -210,7 +211,8 @@ class Recon:
             Parameters:
                 table_name1 (str): The name of the first table, including catalog and database name.
                 table_name2 (str): The name of the second table, including catalog and database name.
-                where_clause (str, optional): A SQL where clause to filter the tables. Defaults to None.
+                where_clause1 (str, optional): A SQL where clause to filter the table1. Defaults to None.
+                where_clause2 (str, optional): A SQL where clause to filter the table2. Defaults to None.
 
             Returns:
                 tuple: A tuple containing two DataFrames read from the specified tables.
@@ -229,13 +231,13 @@ class Recon:
 
         if where_clause:
             try:
-                df1 = self.spark.read.table(table_name1).filter(where_clause)
+                df1 = self.spark.read.table(table_name1).filter(where_clause1)
             except TypeError as e:
-                    raise F"Could not create df for {table_name1} with where clause {where_clause}. Below is error {e}"
+                    raise F"Could not create df for {table_name1} with where clause {where_clause1}. Below is error {e}"
             try:
-                df2 = self.spark.read.table(table_name2).filter(where_clause)
+                df2 = self.spark.read.table(table_name2).filter(where_clause2)
             except TypeError as e:
-                    raise F"Could not create df for {table_name2} with where clause {where_clause}. Below is error {e}"
+                    raise F"Could not create df for {table_name2} with where clause {where_clause2}. Below is error {e}"
         else:
             try:
                 #print(F"spark.read.table({table_name1})")
@@ -681,17 +683,17 @@ class Recon:
       if self.sql_comp.lower() == 'y':
         df1,df2 = self.__sql_comps(table_name1,table_name2,sql1,sql2)
 
-      complex_comps,non_complex_comps =  self.__identify_comps(df1,fields_to_compare)
+        complex_comps,non_complex_comps =  self.__identify_comps(df1,fields_to_compare)
 
-      for i in non_complex_comps["field_type"]:
-            fields_to_compare = non_complex_comps["fields_to_compare"]
-            self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys,fields_to_compare,"simple")
+        for i in non_complex_comps["field_type"]:
+                fields_to_compare = non_complex_comps["fields_to_compare"]
+                self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys,fields_to_compare,"simple")
 
-      for dtype in complex_comps:
-          for field in complex_comps[dtype]:
-                df1_expand,fields_to_compare_comp = self.__expand_complex_fields(df1,dtype,primary_keys,field)
-                df2_expand,fields_to_compare_comp = self.__expand_complex_fields(df2,dtype,primary_keys,field)
-                self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys,fields_to_compare_comp,"complex")
+        for dtype in complex_comps:
+            for field in complex_comps[dtype]:
+                    df1_expand,fields_to_compare_comp = self.__expand_complex_fields(df1,dtype,primary_keys,field)
+                    df2_expand,fields_to_compare_comp = self.__expand_complex_fields(df2,dtype,primary_keys,field)
+                    self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys,fields_to_compare_comp,"complex")
 
       else:
         df1,df2 = self.__table_comps(table_name1,table_name2,where_clause)
