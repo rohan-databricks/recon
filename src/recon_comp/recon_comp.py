@@ -367,8 +367,17 @@ class Recon:
             count_sts = 'f'
             if count1 > count2:
                 joined_df = df1.alias("df1").join(df2.alias("df2"), primary_keys, "anti").withColumn("Table",lit("tb1")).limit(max_recs)
+                #incase count mismatch is due to duplicates if keys passed are actually not primary key
+                if joined_df.count() == 0:
+                     grouped_df = df1.groupBy(primary_keys).count()
+                     duplicate_keys_df = grouped_df.filter(col("count")>1)
+                     joined_df = duplicate_keys_df.withColumn("Table",lit("tb1")).limit(max_recs)
             else:
                 joined_df = df2.alias("df2").join(df1.alias("df1"), primary_keys, "anti").withColumn("Table",lit("tb2")).limit(max_recs)
+                if joined_df.count() == 0:
+                     grouped_df = df2.groupBy(primary_keys).count()
+                     duplicate_keys_df = grouped_df.filter(col("count")>1)
+                     joined_df = duplicate_keys_df.withColumn("Table",lit("tb2")).limit(max_recs)
 
             # Apply collect_list dynamically to each column
             agg_exprs = [collect_list(col(column)).alias(column) for column in primary_keys]
