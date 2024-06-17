@@ -154,7 +154,12 @@ class Recon:
 
             sub_fields = [subfield.name for subfield in df.schema[field].dataType]
 
-            final_pks = list(set(primary_keys) - set(sub_fields))
+            sub_fields_norm = [self.__normalize_column_name(subfield) for subfield in sub_fields]
+
+            if self.sql_comp.lower() == 'y':
+                final_pks = list(set(primary_keys) - set(sub_fields))
+            else:
+                final_pks = list(set(primary_keys) - set(sub_fields_norm))
 
             df_exp = df.select(*final_pks,col(F"{field}.*"))
 
@@ -162,7 +167,12 @@ class Recon:
 
             sub_fields = [subfield.name for subfield in df.schema[field].dataType.elementType]
 
-            final_pks = list(set(primary_keys) - set(sub_fields))
+            sub_fields_norm = [self.__normalize_column_name(subfield) for subfield in sub_fields]
+
+            if self.sql_comp.lower() == 'y':
+                 final_pks = list(set(primary_keys) - set(sub_fields))
+            else:
+                 final_pks = list(set(primary_keys) - set(sub_fields_norm))
 
             df_exp = df.select(*final_pks,explode(field).alias(F"{field}"))
 
@@ -171,8 +181,11 @@ class Recon:
         else:
 
             raise ValueError("invalid datatype. type should either of these arraytype,structtype,arraytype_struct")
-
-        return df_exp,sub_fields
+        
+        if self.sql_comp.lower() == 'y':
+            return df_exp,sub_fields
+        else:
+             return self.__normalize_dataframe_columns(df_exp),sub_fields_norm
        
        
     def __sql_comps(self,table_name1:str,table_name2:str,sql1:str,sql2:str):
@@ -574,8 +587,8 @@ class Recon:
         schema1 = df1.schema
         schema2 = df2.schema
         
-        fields1 = set((field.name, field.dataType) for field in schema1)
-        fields2 = set((field.name, field.dataType) for field in schema2)
+        fields1 = set((self.__normalize_column_name(field.name), field.dataType) for field in schema1)
+        fields2 = set((self.__normalize_column_name(field.name), field.dataType) for field in schema2)
         
         # Check for mismatched fields
         missing_in_df2 = fields1 - fields2
@@ -729,9 +742,6 @@ class Recon:
 
         for dtype in complex_comps:
             for field in complex_comps[dtype]:
-                    df1_expand,fields_to_compare_comp = self.__expand_complex_fields(df1,dtype,primary_keys_new,field)
-                    df2_expand,fields_to_compare_comp = self.__expand_complex_fields(df2,dtype,primary_keys_new,field)
-                    df1_expand = self.__normalize_dataframe_columns(df1_expand)
-                    df2_expand = self.__normalize_dataframe_columns(df2_expand)
-                    fields_to_compare_comp_norm = [self.__normalize_column_name(col) for col in fields_to_compare_comp]
+                    df1_expand,fields_to_compare_comp_norm = self.__expand_complex_fields(df1,dtype,primary_keys_new,field)
+                    df2_expand,fields_to_compare_comp_norm = self.__expand_complex_fields(df2,dtype,primary_keys_new,field)
                     self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys_new,fields_to_compare_comp_norm,"complex",where_clause1,where_clause2)
