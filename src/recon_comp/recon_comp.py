@@ -632,7 +632,8 @@ class Recon:
                 primary_keys (list): List of primary keys for comparison.
                 fields_to_compare (list): List of fields to compare.
                 comp_type (str): type of fields its comparing. It would either be simple or complex.
-                where_clause (str, optional): SQL WHERE clause for filtering data. Default is None.
+                where_clause1 (str, optional): SQL WHERE clause for filtering data for table1. Default is None.
+                where_clause2 (str, optional): SQL WHERE clause for filtering data for table2. Default is None.
                 sql1 (str, optional): SQL query for the first table. Default is None.
                 sql2 (str, optional): SQL query for the second table. Default is None.
 
@@ -666,7 +667,7 @@ class Recon:
                                 .withColumn("FieldType",lit(comp_type))
                                 .withColumn("CheckTimeStamp",current_timestamp())
                                 .withColumn("CurrentUser",current_user())
-                                .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause","Sql1","Sql2","FieldType","CheckTimeStamp","CurrentUser")
+                                .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause1","WhereClause2","Sql1","Sql2","FieldType","CheckTimeStamp","CurrentUser")
                             )
             #append to audit table
             df_results_all.write.mode("append").saveAsTable(self.audit_table)
@@ -734,5 +735,3 @@ class Recon:
                     df2_expand = self.__normalize_dataframe_columns(df2_expand)
                     fields_to_compare_comp_norm = [self.__normalize_column_name(col) for col in fields_to_compare_comp]
                     self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys_new,fields_to_compare_comp_norm,"complex",where_clause1,where_clause2)
-
-## to do - correction for sqls
