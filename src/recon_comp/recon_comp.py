@@ -82,6 +82,20 @@ class Recon:
                 raise ValueError(F"Invalid input: {table_name} must be a non-empty string and with catalog and database name")
         else:
                 raise ValueError(F"Invalid input: table name must be a non-empty string and with catalog and database name")
+        
+    def __normalize_column_name(self,name):
+        return name.lower().replace("_", "")
+    
+    def __normalize_dataframe_columns(self,df):
+        original_columns = df.columns
+        new_columns = [self.__normalize_column_name(col) for col in original_columns]
+        
+        for old_col, new_col in zip(original_columns, new_columns):
+            df = df.withColumnRenamed(old_col, new_col)
+        
+        return df
+
+
 
 # Function to identify column types
     def __identify_column_types(self,df:DataFrame) -> dict:
@@ -140,7 +154,12 @@ class Recon:
 
             sub_fields = [subfield.name for subfield in df.schema[field].dataType]
 
-            final_pks = list(set(primary_keys) - set(sub_fields))
+            sub_fields_norm = [self.__normalize_column_name(subfield) for subfield in sub_fields]
+
+            if self.sql_comp.lower() == 'y':
+                final_pks = list(set(primary_keys) - set(sub_fields))
+            else:
+                final_pks = list(set(primary_keys) - set(sub_fields_norm))
 
             df_exp = df.select(*final_pks,col(F"{field}.*"))
 
@@ -148,7 +167,12 @@ class Recon:
 
             sub_fields = [subfield.name for subfield in df.schema[field].dataType.elementType]
 
-            final_pks = list(set(primary_keys) - set(sub_fields))
+            sub_fields_norm = [self.__normalize_column_name(subfield) for subfield in sub_fields]
+
+            if self.sql_comp.lower() == 'y':
+                 final_pks = list(set(primary_keys) - set(sub_fields))
+            else:
+                 final_pks = list(set(primary_keys) - set(sub_fields_norm))
 
             df_exp = df.select(*final_pks,explode(field).alias(F"{field}"))
 
@@ -157,8 +181,11 @@ class Recon:
         else:
 
             raise ValueError("invalid datatype. type should either of these arraytype,structtype,arraytype_struct")
-
-        return df_exp,sub_fields
+        
+        if self.sql_comp.lower() == 'y':
+            return df_exp,sub_fields
+        else:
+             return self.__normalize_dataframe_columns(df_exp),sub_fields_norm
        
        
     def __sql_comps(self,table_name1:str,table_name2:str,sql1:str,sql2:str):
@@ -187,7 +214,8 @@ class Recon:
     
     def __table_comps(self,table_name1:str,
                          table_name2:str,
-                         where_clause:str=None
+                         where_clause1:str=None,
+                         where_clause2:str=None
                          ):
         
         """
@@ -196,7 +224,8 @@ class Recon:
             Parameters:
                 table_name1 (str): The name of the first table, including catalog and database name.
                 table_name2 (str): The name of the second table, including catalog and database name.
-                where_clause (str, optional): A SQL where clause to filter the tables. Defaults to None.
+                where_clause1 (str, optional): A SQL where clause to filter the table1. Defaults to None.
+                where_clause2 (str, optional): A SQL where clause to filter the table2. Defaults to None.
 
             Returns:
                 tuple: A tuple containing two DataFrames read from the specified tables.
@@ -213,15 +242,15 @@ class Recon:
             
         # read old and new table
 
-        if where_clause:
+        if where_clause1:
             try:
-                df1 = self.spark.read.table(table_name1).filter(where_clause)
+                df1 = self.spark.read.table(table_name1).filter(where_clause1)
             except TypeError as e:
-                    raise F"Could not create df for {table_name1} with where clause {where_clause}. Below is error {e}"
+                    raise F"Could not create df for {table_name1} with where clause {where_clause1}. Below is error {e}"
             try:
-                df2 = self.spark.read.table(table_name2).filter(where_clause)
+                df2 = self.spark.read.table(table_name2).filter(where_clause2)
             except TypeError as e:
-                    raise F"Could not create df for {table_name2} with where clause {where_clause}. Below is error {e}"
+                    raise F"Could not create df for {table_name2} with where clause {where_clause2}. Below is error {e}"
         else:
             try:
                 #print(F"spark.read.table({table_name1})")
@@ -233,6 +262,9 @@ class Recon:
                 df2 = self.spark.read.table(table_name2)
             except TypeError as e:
                     raise F"Could not create df for {table_name2}. Below is error {e}"
+            
+        df1 = self.__normalize_dataframe_columns(df1)
+        df2 = self.__normalize_dataframe_columns(df2)
             
         return df1,df2 
     
@@ -270,8 +302,9 @@ class Recon:
             
             df_final = self.spark.createDataFrame([], self.final_schema)
             # Ensure primary_keys and fields_to_compare are in both DataFrames
-            df1 = df1.select(primary_keys + fields_to_compare).limit(max_recs)
-            df2 = df2.select(primary_keys + fields_to_compare).limit(max_recs)
+            fields_to_select = list(set(primary_keys + fields_to_compare))
+            df1 = df1.select(fields_to_select).limit(max_recs)
+            df2 = df2.select(fields_to_select).limit(max_recs)
             
             # Perform an inner join on the primary keys
             joined_df = df1.alias("df1").join(df2.alias("df2"), primary_keys, "inner")
@@ -347,8 +380,17 @@ class Recon:
             count_sts = 'f'
             if count1 > count2:
                 joined_df = df1.alias("df1").join(df2.alias("df2"), primary_keys, "anti").withColumn("Table",lit("tb1")).limit(max_recs)
+                #incase count mismatch is due to duplicates if keys passed are actually not primary key
+                if joined_df.count() == 0:
+                     grouped_df = df1.groupBy(primary_keys).count()
+                     duplicate_keys_df = grouped_df.filter(col("count")>1)
+                     joined_df = duplicate_keys_df.withColumn("Table",lit("tb1")).limit(max_recs)
             else:
                 joined_df = df2.alias("df2").join(df1.alias("df1"), primary_keys, "anti").withColumn("Table",lit("tb2")).limit(max_recs)
+                if joined_df.count() == 0:
+                     grouped_df = df2.groupBy(primary_keys).count()
+                     duplicate_keys_df = grouped_df.filter(col("count")>1)
+                     joined_df = duplicate_keys_df.withColumn("Table",lit("tb2")).limit(max_recs)
 
             # Apply collect_list dynamically to each column
             agg_exprs = [collect_list(col(column)).alias(column) for column in primary_keys]
@@ -387,8 +429,9 @@ class Recon:
         completeness_sts = 'p'
         check_type = 'completeness'
 
-        df1 = df1.select(primary_keys + fields_to_compare)
-        df2 = df2.select(primary_keys + fields_to_compare)
+        fields_to_select = list(set(primary_keys + fields_to_compare))
+        df1 = df1.select(fields_to_select)
+        df2 = df2.select(fields_to_select)
 
         completeness1 = df1.dropna().count() 
         completeness2 = df2.dropna().count() 
@@ -435,8 +478,9 @@ class Recon:
                 raise ValueError("Invalid input: 'fields_to_compare' must be non-empty [] and less than 50 fields.")
             
         # Ensure primary_keys and fields_to_compare are in both DataFrames
-        df1 = df1.select(primary_keys + fields_to_compare).limit(max_recs)
-        df2 = df2.select(primary_keys + fields_to_compare).limit(max_recs)
+        fields_to_select = list(set(primary_keys + fields_to_compare))
+        df1 = df1.select(fields_to_select).limit(max_recs)
+        df2 = df2.select(fields_to_select).limit(max_recs)
 
         for field in df1.columns:
 
@@ -487,8 +531,9 @@ class Recon:
                 raise ValueError("Invalid input: 'fields_to_compare' must be non-empty [] and less than 50 fields.")
             
         # Ensure primary_keys and fields_to_compare are in both DataFrames
-        df1 = df1.select(primary_keys + fields_to_compare).limit(max_recs)
-        df2 = df2.select(primary_keys + fields_to_compare).limit(max_recs)
+        fields_to_select = list(set(primary_keys + fields_to_compare))
+        df1 = df1.select(fields_to_select).limit(max_recs)
+        df2 = df2.select(fields_to_select).limit(max_recs)
 
 
         for field in df1.columns:
@@ -539,6 +584,16 @@ class Recon:
         
         df_final = self.spark.createDataFrame([], self.final_schema)
 
+        df1 = self.__normalize_dataframe_columns(df1)
+        df2 = self.__normalize_dataframe_columns(df2)
+
+        col_types = self.__identify_column_types(df1)
+
+        drop_cols = [item for sublist in col_types.values() for item in sublist]
+
+        df1 = df1.drop(*drop_cols)
+        df2 = df2.drop(*drop_cols)
+
         schema1 = df1.schema
         schema2 = df2.schema
         
@@ -587,7 +642,8 @@ class Recon:
                     primary_keys:list,
                     fields_to_compare:list,
                     comp_type:str, 
-                    where_clause:str=None,
+                    where_clause1:str=None,
+                    where_clause2:str=None,
                     sql1:str=None,
                     sql2:str=None):
             """
@@ -599,7 +655,8 @@ class Recon:
                 primary_keys (list): List of primary keys for comparison.
                 fields_to_compare (list): List of fields to compare.
                 comp_type (str): type of fields its comparing. It would either be simple or complex.
-                where_clause (str, optional): SQL WHERE clause for filtering data. Default is None.
+                where_clause1 (str, optional): SQL WHERE clause for filtering data for table1. Default is None.
+                where_clause2 (str, optional): SQL WHERE clause for filtering data for table2. Default is None.
                 sql1 (str, optional): SQL query for the first table. Default is None.
                 sql2 (str, optional): SQL query for the second table. Default is None.
 
@@ -626,13 +683,14 @@ class Recon:
             df_results_all = (df_results.withColumn("UniqueCheckID",lit(str(uuid.uuid4())))
                                 .withColumn("PrimaryKeys",lit(primary_keys))
                                 .withColumn("FieldsToCompare",lit(fields_to_compare))
-                                .withColumn("WhereClause",when(lit(where_clause) == None,lit("NULL")).otherwise(lit(where_clause)))
+                                .withColumn("WhereClause1",when(lit(where_clause1) == None,lit("NULL")).otherwise(lit(where_clause1)))
+                                .withColumn("WhereClause2",when(lit(where_clause2) == None,lit("NULL")).otherwise(lit(where_clause2)))
                                 .withColumn("Sql1",when(lit(sql1) == None,lit("NULL")).otherwise(lit(sql1)))
                                 .withColumn("Sql2",when(lit(sql2) == None,lit("NULL")).otherwise(lit(sql2)))
                                 .withColumn("FieldType",lit(comp_type))
                                 .withColumn("CheckTimeStamp",current_timestamp())
                                 .withColumn("CurrentUser",current_user())
-                                .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause","Sql1","Sql2","FieldType","CheckTimeStamp","CurrentUser")
+                                .select("UniqueCheckID","Table1","Table2","PrimaryKeys","FieldsToCompare","CheckType","CheckStatus","Results","WhereClause1","WhereClause2","Sql1","Sql2","FieldType","CheckTimeStamp","CurrentUser")
                             )
             #append to audit table
             df_results_all.write.mode("append").saveAsTable(self.audit_table)
@@ -641,7 +699,8 @@ class Recon:
                     table_name2:str,
                     primary_keys:list,
                     fields_to_compare:list, 
-                    where_clause:str=None,
+                    where_clause1:str=None,
+                    where_clause2:str=None,
                     sql1:str=None,
                     sql2:str=None):
       
@@ -653,7 +712,8 @@ class Recon:
                 table_name2 (str): The name of the second table.
                 primary_keys (list): List of primary keys for comparison.
                 fields_to_compare (list): List of fields to compare.
-                where_clause (str, optional): SQL WHERE clause for filtering data. Default is None.
+                where_clause1 (str, optional): SQL WHERE clause for filtering tabl1. Default is None.
+                where_clause2 (str, optional): SQL WHERE clause for filtering tabl2. Default is None.
                 sql1 (str, optional): SQL query for the first table. Default is None.
                 sql2 (str, optional): SQL query for the second table. Default is None.
 
@@ -663,18 +723,35 @@ class Recon:
       
       if self.sql_comp.lower() == 'y':
         df1,df2 = self.__sql_comps(table_name1,table_name2,sql1,sql2)
+
+        complex_comps,non_complex_comps =  self.__identify_comps(df1,fields_to_compare)
+
+        for i in non_complex_comps["field_type"]:
+                fields_to_compare = non_complex_comps["fields_to_compare"]
+                self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys,fields_to_compare,"simple",None,None,sql1,sql2)
+
+        for dtype in complex_comps:
+            for field in complex_comps[dtype]:
+                    df1_expand,fields_to_compare_comp = self.__expand_complex_fields(df1,dtype,primary_keys,field)
+                    df2_expand,fields_to_compare_comp = self.__expand_complex_fields(df2,dtype,primary_keys,field)
+                    self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys,fields_to_compare_comp,"complex",None,None,sql1,sql2)
+
       else:
-        df1,df2 = self.__table_comps(table_name1,table_name2,where_clause)
+        df1,df2 = self.__table_comps(table_name1,table_name2,where_clause1,where_clause2)
+    
+        fields_to_compare_norm = [self.__normalize_column_name(col) for col in fields_to_compare]
+        complex_comps,non_complex_comps =  self.__identify_comps(df1,fields_to_compare_norm)
 
-      complex_comps,non_complex_comps =  self.__identify_comps(df1,fields_to_compare)
+        primary_keys_new = [self.__normalize_column_name(col) for col in primary_keys]
+        
 
+        for i in non_complex_comps["field_type"]:
+                fields_to_compare = non_complex_comps["fields_to_compare"]
+                #fields_to_compare_new = [self.__normalize_column_name(col) for col in fields_to_compare]
+                self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys_new,fields_to_compare,"simple",where_clause1,where_clause2)
 
-      for i in non_complex_comps["field_type"]:
-            fields_to_compare = non_complex_comps["fields_to_compare"]
-            self.__perform_comp(df1,df2,table_name1,table_name2,primary_keys,fields_to_compare,"simple")
-
-      for dtype in complex_comps:
-          for field in complex_comps[dtype]:
-                df1_expand,fields_to_compare_comp = self.__expand_complex_fields(df1,dtype,primary_keys,field)
-                df2_expand,fields_to_compare_comp = self.__expand_complex_fields(df2,dtype,primary_keys,field)
-                self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys,fields_to_compare_comp,"complex")
+        for dtype in complex_comps:
+            for field in complex_comps[dtype]:
+                    df1_expand,fields_to_compare_comp_norm = self.__expand_complex_fields(df1,dtype,primary_keys_new,field)
+                    df2_expand,fields_to_compare_comp_norm = self.__expand_complex_fields(df2,dtype,primary_keys_new,field)
+                    self.__perform_comp(df1_expand,df2_expand,table_name1,table_name2,primary_keys_new,fields_to_compare_comp_norm,"complex",where_clause1,where_clause2)
