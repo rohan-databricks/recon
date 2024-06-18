@@ -584,11 +584,21 @@ class Recon:
         
         df_final = self.spark.createDataFrame([], self.final_schema)
 
+        df1 = self.__normalize_dataframe_columns(df1)
+        df2 = self.__normalize_dataframe_columns(df2)
+
+        col_types = self.__identify_column_types(df1)
+
+        drop_cols = [item for sublist in col_types.values() for item in sublist]
+
+        df1 = df1.drop(*drop_cols)
+        df2 = df2.drop(*drop_cols)
+
         schema1 = df1.schema
         schema2 = df2.schema
         
-        fields1 = set((self.__normalize_column_name(field.name), field.dataType) for field in schema1)
-        fields2 = set((self.__normalize_column_name(field.name), field.dataType) for field in schema2)
+        fields1 = set((field.name, field.dataType) for field in schema1)
+        fields2 = set((field.name, field.dataType) for field in schema2)
         
         # Check for mismatched fields
         missing_in_df2 = fields1 - fields2
