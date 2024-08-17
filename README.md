@@ -52,6 +52,20 @@ sql2(Optional): SQL query for the second table.
 
 The comparison results are stored in an audit table specified during initialization.
 
+## Comparisons
+
+Recon does 5 level comparisons
+
+1) compare record count:- Compares the record counts of two DataFrames and identify mismatches and logs into audit table primary keys that are missing in either dataframe.
+
+2) compare data completeness:- Compares the data completeness (i.e., count of non-null records) of two DataFrames.
+
+3) compare data consistency:- Compares disctinct counts for specified fields between two dataframes.
+
+4) compare data distribution:- Compares distribution of specified fields in two dataframes
+
+5) compare schemas:- Compares schemas of specified fields in two datafames
+
 
 ### License
 Open source
