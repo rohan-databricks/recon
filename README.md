@@ -30,7 +30,7 @@ audit_table: Name of the audit table to store comparison results.
 ### Call the comparison methods:
 
 
-comparison_results = recon.compare_all(table_name1, table_name2, primary_keys, fields_to_compare, where_clause, sql1, sql2)
+comparison_results = recon.compare_all(table_name1, table_name2, primary_keys, fields_to_compare, where_clause1,where_cluase2, sql1, sql2)
 
 ### Parameters:
 
@@ -42,7 +42,9 @@ primary_keys(mandatory): List of primary keys for comparison.
 
 fields_to_compare(mandatory): List of fields to compare.
 
-where_clause(recommeded when comparing tables and not providing sqls): SQL WHERE clause for filtering data.
+where_clause1(recommeded when comparing tables and not providing sqls): SQL WHERE clause for filtering data.
+
+where_clause2(recommeded when comparing tables and not providing sqls): SQL WHERE clause for filtering data on table_name2
 
 sql1(Optional): SQL query for the first table.
 
